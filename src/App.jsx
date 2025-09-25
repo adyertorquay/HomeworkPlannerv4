@@ -71,6 +71,14 @@ function App() {
     }
   }
 
+  // filter tasks due in the next 7 days
+  const tasksNextWeek = useMemo(() => {
+    const now = new Date()
+    const in7days = new Date()
+    in7days.setDate(now.getDate() + 7)
+    return allTasks.filter(t => t.dueAt >= now && t.dueAt <= in7days)
+  }, [allTasks])
+
   return (
     <div className="max-w-6xl mx-auto p-4 md:p-6 space-y-4">
       <header className="no-print">
@@ -88,7 +96,7 @@ function App() {
           </div>
         </div>
         <div>
-          <TasksList tasks={allTasks} onDelete={deleteTask} />
+          <TasksList tasks={tasksNextWeek} onDelete={deleteTask} />
           {unscheduled.length > 0 && (
             <div className="mt-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3">
               <div className="font-medium mb-1">Unscheduled (not enough free time)</div>
