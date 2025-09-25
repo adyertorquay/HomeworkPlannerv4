@@ -51,7 +51,7 @@ function App() {
 
   const allTasks = useMemo(() => [...weeklyTasksWithDates, ...adhocTasks], [weeklyTasksWithDates, adhocTasks])
   const availabilityBlocks = useMemo(() => availabilityToBlocks(availabilityMap, currentWeekBase), [availabilityMap, currentWeekBase])
-  const { sessions, unscheduled } = useMemo(() => scheduleTasks(allTasks, availabilityBlocks.map(b => ({ ...b }))), [allTasks, availabilityBlocks])
+  const { sessions } = useMemo(() => scheduleTasks(allTasks, availabilityBlocks.map(b => ({ ...b }))), [allTasks, availabilityBlocks])
 
   function addTask(t) { setAdhocTasks(a => [...a, t]) }
   function deleteTask(id) { setAdhocTasks(a => a.filter(x => x.id !== id)) }
@@ -97,17 +97,6 @@ function App() {
         </div>
         <div>
           <TasksList tasks={tasksNextWeek} onDelete={deleteTask} />
-          {unscheduled.length > 0 && (
-            <div className="mt-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3">
-              <div className="font-medium mb-1">Unscheduled (not enough free time)</div>
-              <ul className="text-sm list-disc pl-5 space-y-1">
-                {unscheduled.map(u => (
-                  <li key={u.id}>{u.title} — {u.minutesLeft} mins left (due {new Date(u.dueAt).toLocaleString()})</li>
-                ))}
-              </ul>
-              <p className="text-xs mt-1">Tip: add more availability or reduce estimates.</p>
-            </div>
-          )}
         </div>
       </div>
 
