@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.rbc-calendar {
+  background: white;
+  border-radius: 1rem;
+  box-shadow: 0 10px 25px rgba(0,0,0,.06);
+  padding: 0.5rem;
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; }
+}
