@@ -8,6 +8,7 @@ import { dueDateFromWeekly } from './utils/date.js'
 import { scheduleTasks } from './utils/scheduler.js'
 import { load, save } from './utils/storage.js'
 import { generateICS } from './export/icsExport.js'
+import { addDays, isBefore } from 'date-fns'
 
 function App() {
   const [adhocTasks, setAdhocTasks] = useState(() => load('adhocTasks', []))
@@ -22,17 +23,31 @@ function App() {
     setAvailabilityMap(m => ({ ...m, [key]: !m[key] }))
   }
 
+  // academic year: Sept 1 → July 31
+  const academicStart = new Date(new Date().getFullYear(), 8, 1) // 1 Sept
+  const academicEnd = new Date(new Date().getFullYear() + 1, 6, 31) // 31 July next year
+
   const weeklyTasksWithDates = useMemo(() => {
-    return WEEKLY_TASKS.map(t => ({
-      id: `${t.id}-${weekKey(currentWeekBase)}`,
-      title: t.title,
-      subject: t.subject,
-      dueAt: dueDateFromWeekly(t, currentWeekBase),
-      estMinutes: t.estMinutes,
-      priority: t.priority,
-      type: t.type
-    }))
-  }, [currentWeekBase])
+    const tasks = []
+    let base = academicStart
+
+    while (isBefore(base, academicEnd)) {
+      WEEKLY_TASKS.forEach(t => {
+        tasks.push({
+          id: `${t.id}-${weekKey(base)}`,
+          title: t.title,
+          subject: t.subject,
+          dueAt: dueDateFromWeekly(t, base),
+          estMinutes: t.estMinutes,
+          priority: t.priority,
+          type: t.type
+        })
+      })
+      base = addDays(base, 7) // move forward by 1 week
+    }
+
+    return tasks
+  }, [])
 
   const allTasks = useMemo(() => [...weeklyTasksWithDates, ...adhocTasks], [weeklyTasksWithDates, adhocTasks])
   const availabilityBlocks = useMemo(() => availabilityToBlocks(availabilityMap, currentWeekBase), [availabilityMap, currentWeekBase])
