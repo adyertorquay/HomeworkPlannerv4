@@ -5,15 +5,13 @@ import CalendarView from './components/CalendarView.jsx'
 import AvailabilityPicker, { availabilityToBlocks } from './components/AvailabilityPicker.jsx'
 import { WEEKLY_TASKS } from './data/recurringTasks.js'
 import { dueDateFromWeekly } from './utils/date.js'
-import { scheduleTasks } from './utils/scheduler.js'
 import { load, save } from './utils/storage.js'
 import { generateICS } from './export/icsExport.js'
-import { addDays, isBefore } from 'date-fns'
+import { addDays, startOfWeek, endOfWeek, isBefore, format } from 'date-fns'
 
 function App() {
   const [adhocTasks, setAdhocTasks] = useState(() => load('adhocTasks', []))
   const [availabilityMap, setAvailabilityMap] = useState(() => load('availabilityMap', {}) || {})
-  const [currentWeekBase, setCurrentWeekBase] = useState(new Date())
 
   useEffect(() => { save('adhocTasks', adhocTasks) }, [adhocTasks])
   useEffect(() => { save('availabilityMap', availabilityMap) }, [availabilityMap])
@@ -23,35 +21,63 @@ function App() {
     setAvailabilityMap(m => ({ ...m, [key]: !m[key] }))
   }
 
-  // academic year: Sept 1 → July 31
-  const academicStart = new Date(new Date().getFullYear(), 8, 1) // 1 Sept
-  const academicEnd = new Date(new Date().getFullYear() + 1, 6, 31) // 31 July next year
+  // This week’s range
+  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 })
+  const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 })
 
-  const weeklyTasksWithDates = useMemo(() => {
-    const tasks = []
-    let base = academicStart
+  // Generate recurring tasks just for THIS week
+  const weeklyTasksThisWeek = useMemo(() => {
+    return WEEKLY_TASKS.map(t => ({
+      id: `${t.id}-${format(weekStart, 'yyyy-MM-dd')}`,
+      title: t.title,
+      subject: t.subject,
+      dueAt: dueDateFromWeekly(t, weekStart),
+      estMinutes: t.estMinutes,
+      priority: t.priority,
+      type: t.type
+    }))
+  }, [weekStart])
 
-    while (isBefore(base, academicEnd)) {
-      WEEKLY_TASKS.forEach(t => {
-        tasks.push({
-          id: `${t.id}-${weekKey(base)}`,
-          title: t.title,
-          subject: t.subject,
-          dueAt: dueDateFromWeekly(t, base),
-          estMinutes: t.estMinutes,
-          priority: t.priority,
-          type: t.type
-        })
+  // Merge recurring + adhoc
+  const allTasks = useMemo(() => {
+    return [...weeklyTasksThisWeek, ...adhocTasks].filter(
+      t => t.dueAt >= weekStart && t.dueAt <= weekEnd
+    )
+  }, [weeklyTasksThisWeek, adhocTasks, weekStart, weekEnd])
+
+  // Simplified scheduling: 1 task = 1 block, max 2 per day
+  const availabilityBlocks = useMemo(() => availabilityToBlocks(availabilityMap, weekStart), [availabilityMap, weekStart])
+
+  const sessions = useMemo(() => {
+    const dayCount = {}
+    const result = []
+
+    // sort tasks by deadline
+    const sorted = [...allTasks].sort((a, b) => a.dueAt - b.dueAt)
+
+    for (const task of sorted) {
+      // find first available block before deadline
+      const block = availabilityBlocks.find(b =>
+        b.start < task.dueAt &&
+        (dayCount[format(b.start, 'yyyy-MM-dd')] || 0) < 2
+      )
+      if (!block) continue
+
+      const dayKey = format(block.start, 'yyyy-MM-dd')
+      dayCount[dayKey] = (dayCount[dayKey] || 0) + 1
+
+      result.push({
+        taskId: task.id,
+        title: `${task.title} (${task.estMinutes} mins)`,
+        subject: task.subject,
+        start: block.start,
+        end: block.end,
+        type: 'work'
       })
-      base = addDays(base, 7) // move forward by 1 week
     }
 
-    return tasks
-  }, [])
-
-  const allTasks = useMemo(() => [...weeklyTasksWithDates, ...adhocTasks], [weeklyTasksWithDates, adhocTasks])
-  const availabilityBlocks = useMemo(() => availabilityToBlocks(availabilityMap, currentWeekBase), [availabilityMap, currentWeekBase])
-  const { sessions } = useMemo(() => scheduleTasks(allTasks, availabilityBlocks.map(b => ({ ...b }))), [allTasks, availabilityBlocks])
+    return result
+  }, [allTasks, availabilityBlocks])
 
   function addTask(t) { setAdhocTasks(a => [...a, t]) }
   function deleteTask(id) { setAdhocTasks(a => a.filter(x => x.id !== id)) }
@@ -71,19 +97,11 @@ function App() {
     }
   }
 
-  // filter tasks due in the next 7 days
-  const tasksNextWeek = useMemo(() => {
-    const now = new Date()
-    const in7days = new Date()
-    in7days.setDate(now.getDate() + 7)
-    return allTasks.filter(t => t.dueAt >= now && t.dueAt <= in7days)
-  }, [allTasks])
-
   return (
     <div className="max-w-6xl mx-auto p-4 md:p-6 space-y-4">
       <header className="no-print">
         <h1 className="text-2xl md:text-3xl font-bold">Homework Planner</h1>
-        <p className="text-slate-600">Select your availability, add homework, and auto-schedule into free time.</p>
+        <p className="text-slate-600">Plan your homework for this week in simple steps.</p>
       </header>
 
       <div className="grid md:grid-cols-3 gap-4 no-print">
@@ -96,26 +114,17 @@ function App() {
           </div>
         </div>
         <div>
-          <TasksList tasks={tasksNextWeek} onDelete={deleteTask} />
+          <TasksList tasks={allTasks} onDelete={deleteTask} />
         </div>
       </div>
 
       <CalendarView sessions={sessions} deadlines={allTasks} />
 
       <footer className="text-center text-xs text-slate-500 py-4 no-print">
-        Built for Torquay Academy • Weekly fixed tasks included
+        Built for Torquay Academy • Weekly planner view
       </footer>
     </div>
   )
-}
-
-function weekKey(d) {
-  const y = d.getFullYear()
-  const start = new Date(d)
-  start.setDate(d.getDate() - ((d.getDay() + 6) % 7))
-  const m = String(start.getMonth() + 1).padStart(2, '0')
-  const day = String(start.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
 }
 
 export default App
