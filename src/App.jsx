@@ -7,7 +7,7 @@ import { WEEKLY_TASKS } from './data/recurringTasks.js'
 import { dueDateFromWeekly } from './utils/date.js'
 import { load, save } from './utils/storage.js'
 import { generateICS } from './export/icsExport.js'
-import { addDays, startOfWeek, endOfWeek, isBefore, format } from 'date-fns'
+import { startOfWeek, endOfWeek, format } from 'date-fns'
 
 function App() {
   const [adhocTasks, setAdhocTasks] = useState(() => load('adhocTasks', []))
@@ -21,11 +21,11 @@ function App() {
     setAvailabilityMap(m => ({ ...m, [key]: !m[key] }))
   }
 
-  // This week’s range
+  // Current week range
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 })
   const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 })
 
-  // Generate recurring tasks just for THIS week
+  // Recurring tasks for this week
   const weeklyTasksThisWeek = useMemo(() => {
     return WEEKLY_TASKS.map(t => ({
       id: `${t.id}-${format(weekStart, 'yyyy-MM-dd')}`,
@@ -38,33 +38,41 @@ function App() {
     }))
   }, [weekStart])
 
-  // Merge recurring + adhoc
+  // Merge recurring + adhoc (only within this week)
   const allTasks = useMemo(() => {
     return [...weeklyTasksThisWeek, ...adhocTasks].filter(
       t => t.dueAt >= weekStart && t.dueAt <= weekEnd
     )
   }, [weeklyTasksThisWeek, adhocTasks, weekStart, weekEnd])
 
-  // Simplified scheduling: 1 task = 1 block, max 2 per day
+  // Availability blocks
   const availabilityBlocks = useMemo(() => availabilityToBlocks(availabilityMap, weekStart), [availabilityMap, weekStart])
 
+  // Schedule tasks: 1 per slot, max 2 per day
   const sessions = useMemo(() => {
     const dayCount = {}
+    const usedSlots = new Set()
     const result = []
 
-    // sort tasks by deadline
     const sorted = [...allTasks].sort((a, b) => a.dueAt - b.dueAt)
 
     for (const task of sorted) {
-      // find first available block before deadline
-      const block = availabilityBlocks.find(b =>
-        b.start < task.dueAt &&
-        (dayCount[format(b.start, 'yyyy-MM-dd')] || 0) < 2
-      )
+      const block = availabilityBlocks.find(b => {
+        const dayKey = format(b.start, 'yyyy-MM-dd')
+        const slotKey = b.start.toISOString()
+        return (
+          b.start < task.dueAt &&              // before deadline
+          (dayCount[dayKey] || 0) < 2 &&       // max 2 per day
+          !usedSlots.has(slotKey)              // slot free
+        )
+      })
+
       if (!block) continue
 
       const dayKey = format(block.start, 'yyyy-MM-dd')
+      const slotKey = block.start.toISOString()
       dayCount[dayKey] = (dayCount[dayKey] || 0) + 1
+      usedSlots.add(slotKey)
 
       result.push({
         taskId: task.id,
